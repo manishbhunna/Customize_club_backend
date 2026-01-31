@@ -15,9 +15,13 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
+
+const BOT_URL=`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
+
 // ✅ Home route
 app.get("/", (req, res) => {
   res.send("🚀 Razorpay backend is running!");
+  
 });
 
 // ✅ Create Order API
@@ -32,7 +36,7 @@ app.post("/create-order", async (req, res) => {
     };
 
     const order = await razorpay.orders.create(options);
-    console.log("🟢 Order created:", order);
+    console.log("🟢 Order created:");
     res.json(order);
 
   } catch (err) {
@@ -54,7 +58,7 @@ app.post("/verify-payment", (req, res) => {
       .digest("hex");
 
     if (expectedSignature === razorpay_signature) {
-      console.log("✅ Payment verified:", razorpay_payment_id);
+      console.log("✅ Payment verified");
       res.json({ status: "success", paymentId: razorpay_payment_id });
     } else {
       console.log("❌ Payment verification failed");
@@ -66,6 +70,112 @@ app.post("/verify-payment", (req, res) => {
     res.status(500).send("Verification failed");
   }
 });
+
+let orderPayload = null;
+let selecteddata=null
+
+// Order route
+app.post("/api/order", async (req, res) => {
+  orderPayload = req.body;
+  
+
+  let allcartitems=orderPayload.cart.map((item,index)=>({
+     index:index+1,
+     productname: item.name,
+     userInputs: item.userInputs,
+     Productid :item.Productid,
+     Quantity:item.qty,
+     price:item.price
+  }))
+
+
+  selecteddata={
+    "cart":allcartitems,
+    "address":orderPayload.address,
+    "paymentInfo":orderPayload.paymentInfo,
+  }
+
+const productText = allcartitems.map(item => `
+🧾 Product #${item.index}
+• Name: ${item.productname}
+• Quantity: ${item.Quantity}
+• Price: ₹${item.price}
+
+🎨 Customization:
+${Object.entries(item.userInputs)
+  .map(([key, value]) => `   - ${key}: ${value}`)
+  .join("\n")}
+`).join("\n\n");
+
+const addressText = `
+👤 Name: ${selecteddata.address.name}
+🏠 Address: ${selecteddata.address.flat}, ${selecteddata.address.landmark}
+🏙 City: ${selecteddata.address.city}, ${selecteddata.address.state}
+📮 PIN: ${selecteddata.address.pin}
+📞 Phone: ${selecteddata.address.phone}
+`;
+
+const paymentText = `
+💳 Payment Status: ${selecteddata.paymentInfo.status}
+🧾 Payment ID: ${selecteddata.paymentInfo.paymentId}
+📦 Order ID: ${selecteddata.paymentInfo.orderId}
+`;
+
+const message = `
+🛒 *New Order Received*
+
+📦 *Product Details*
+${productText}
+
+📍 *Delivery Address*
+${addressText}
+
+💰 *Payment Details*
+${paymentText}
+`;
+
+
+    async function sendtotelegram() {
+  try {
+   
+    const response = await fetch(BOT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id:process.env.CHAT_ID,
+        text: message,
+        parse_mode: "Markdown",
+      }),
+    });
+
+    return response;
+
+  } catch (error) {
+    console.error("❌ Error in send to telegram:", error);
+    throw error;
+  }
+}
+    await sendtotelegram();
+
+
+  // Respond success
+  res.json({ 
+    success: true, 
+    message: "Order received successfully",
+    data:selecteddata });
+});
+
+// GET – browser / HTML ko data de
+app.get("/api/order", (req, res) => {
+  if (!selecteddata) {
+    return res.json({ message: "No order data yet" });
+  }
+
+  res.json(selecteddata);
+});
+
 
 // ✅ Server listen
 app.listen(5000, () => {
